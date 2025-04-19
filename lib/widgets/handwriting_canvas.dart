@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'dart:ui' show PointMode;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../providers/handwriting_provider.dart';
@@ -12,8 +11,8 @@ class HandwritingCanvas extends StatefulWidget {
 }
 
 class _HandwritingCanvasState extends State<HandwritingCanvas> {
-  // Simple list of points for drawing
-  final List<DrawingPoint?> points = [];
+  // Store drawing points
+  final List<Offset?> points = [];
   
   @override
   void initState() {
@@ -50,26 +49,39 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
             Expanded(
               child: Stack(
                 children: [
-                  // Paper-like background with subtle grid
+                  // Background
                   Container(
                     color: Colors.white,
-                    child: CustomPaint(
-                      painter: GridPainter(),
-                      size: Size.infinite,
-                    ),
                   ),
                   
-                  // Drawing layer - Using RepaintBoundary for performance
-                  RepaintBoundary(
-                    child: DrawingArea(
-                      points: points,
-                      onPointsUpdate: (updatedPoints) {
-                        // This ensures we update state properly
-                        setState(() {
-                          points.clear();
-                          points.addAll(updatedPoints);
-                        });
-                      },
+                  // Drawing canvas - absolutely simplest implementation
+                  GestureDetector(
+                    onPanStart: (details) {
+                      setState(() {
+                        RenderBox renderBox = context.findRenderObject() as RenderBox;
+                        Offset localPosition = renderBox.globalToLocal(details.globalPosition);
+                        points.add(localPosition);
+                      });
+                    },
+                    onPanUpdate: (details) {
+                      setState(() {
+                        RenderBox renderBox = context.findRenderObject() as RenderBox;
+                        Offset localPosition = renderBox.globalToLocal(details.globalPosition);
+                        points.add(localPosition);
+                      });
+                    },
+                    onPanEnd: (details) {
+                      setState(() {
+                        // Add null to mark the end of a stroke
+                        points.add(null);
+                      });
+                    },
+                    child: CustomPaint(
+                      painter: SimplePainter(points: points),
+                      child: Container(
+                        width: double.infinity,
+                        height: double.infinity,
+                      ),
                     ),
                   ),
                   
@@ -222,151 +234,26 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
   }
 }
 
-// Separate widget for drawing area to better handle state changes
-class DrawingArea extends StatefulWidget {
-  final List<DrawingPoint?> points;
-  final Function(List<DrawingPoint?>) onPointsUpdate;
-
-  const DrawingArea({
-    super.key,
-    required this.points,
-    required this.onPointsUpdate,
-  });
-
-  @override
-  State<DrawingArea> createState() => _DrawingAreaState();
-}
-
-class _DrawingAreaState extends State<DrawingArea> {
-  // Local copy of points for immediate drawing response
-  late List<DrawingPoint?> _localPoints;
-
-  @override
-  void initState() {
-    super.initState();
-    _localPoints = List.from(widget.points);
-  }
-
-  @override
-  void didUpdateWidget(DrawingArea oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.points != oldWidget.points) {
-      _localPoints = List.from(widget.points);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onPanStart: (details) {
-        // Create a new point and update immediately
-        final newPoint = DrawingPoint(
-          details.localPosition,
-          Paint()
-            ..color = Colors.black
-            ..isAntiAlias = true
-            ..strokeWidth = 1.0 
-            ..strokeCap = StrokeCap.round,
-        );
-        
-        setState(() {
-          _localPoints.add(newPoint);
-        });
-        
-        // Notify parent
-        widget.onPointsUpdate(_localPoints);
-      },
-      onPanUpdate: (details) {
-        // Add new point and update immediately
-        final newPoint = DrawingPoint(
-          details.localPosition,
-          Paint()
-            ..color = Colors.black
-            ..isAntiAlias = true
-            ..strokeWidth = 1.0
-            ..strokeCap = StrokeCap.round,
-        );
-        
-        setState(() {
-          _localPoints.add(newPoint);
-        });
-        
-        // Notify parent
-        widget.onPointsUpdate(_localPoints);
-      },
-      onPanEnd: (details) {
-        // Add null to mark end of stroke
-        setState(() {
-          _localPoints.add(null);
-        });
-        
-        // Notify parent
-        widget.onPointsUpdate(_localPoints);
-      },
-      child: CustomPaint(
-        painter: DrawingPainter(points: _localPoints),
-        size: Size.infinite,
-      ),
-    );
-  }
-}
-
-// Simple class to represent a drawing point with its style
-class DrawingPoint {
-  final Offset offset;
-  final Paint paint;
+// Super simple painter that draws lines between points
+class SimplePainter extends CustomPainter {
+  final List<Offset?> points;
   
-  DrawingPoint(this.offset, this.paint);
-}
-
-// Painter for drawing lines
-class DrawingPainter extends CustomPainter {
-  final List<DrawingPoint?> points;
-  
-  DrawingPainter({required this.points});
+  SimplePainter({required this.points});
   
   @override
   void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.black
+      ..strokeWidth = 1.0
+      ..strokeCap = StrokeCap.round;
+    
     for (int i = 0; i < points.length - 1; i++) {
       if (points[i] != null && points[i + 1] != null) {
-        // Draw line between points
-        canvas.drawLine(
-          points[i]!.offset,
-          points[i + 1]!.offset,
-          points[i]!.paint,
-        );
-      } else if (points[i] != null && (i == points.length - 1 || points[i + 1] == null)) {
-        // Draw a single point if it's at the end of a stroke
-        canvas.drawCircle(points[i]!.offset, 0.5, points[i]!.paint);
+        canvas.drawLine(points[i]!, points[i + 1]!, paint);
       }
     }
   }
   
   @override
-  bool shouldRepaint(covariant DrawingPainter oldDelegate) {
-    return oldDelegate.points != points;
-  }
-}
-
-// Simple grid painter for paper-like background
-class GridPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.grey.withOpacity(0.05)
-      ..strokeWidth = 0.5;
-    
-    // Draw horizontal lines
-    for (double i = 0; i < size.height; i += 20) {
-      canvas.drawLine(Offset(0, i), Offset(size.width, i), paint);
-    }
-    
-    // Draw vertical lines
-    for (double i = 0; i < size.width; i += 20) {
-      canvas.drawLine(Offset(i, 0), Offset(i, size.height), paint);
-    }
-  }
-  
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(SimplePainter oldDelegate) => true;
 }
