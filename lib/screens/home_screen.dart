@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import '../widgets/handwriting_canvas.dart';
-import '../providers/handwriting_provider.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -40,60 +38,11 @@ class HomeScreen extends StatelessWidget {
               ),
             ),
             
-            // Main content area (canvas + buttons)
-            Expanded(
+            // Main content area (handwriting canvas)
+            const Expanded(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                child: Column(
-                  children: [
-                    // Handwriting canvas
-                    const Expanded(
-                      child: HandwritingCanvas(),
-                    ),
-                    
-                    // Action buttons
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 20.0),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          _buildActionButton(
-                            label: 'Clear',
-                            backgroundColor: const Color(0xFF64748B),
-                            onPressed: () {
-                              // Clear canvas functionality
-                              final provider = Provider.of<HandwritingProvider>(context, listen: false);
-                              provider.clearCanvas();
-                            },
-                          ),
-                          _buildActionButton(
-                            label: 'Reflow',
-                            backgroundColor: const Color(0xFF4D7CF6),
-                            onPressed: () {
-                              // Reflow content functionality
-                              // This would reorganize the strokes in a real app
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Reflow functionality would reorganize writing in a real app'),
-                                  duration: Duration(seconds: 2),
-                                ),
-                              );
-                            },
-                          ),
-                          _buildActionButton(
-                            label: 'Check',
-                            backgroundColor: const Color(0xFF6366F1),
-                            onPressed: () {
-                              // Check functionality
-                              final provider = Provider.of<HandwritingProvider>(context, listen: false);
-                              provider.processHandwriting();
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                padding: EdgeInsets.symmetric(horizontal: 20.0),
+                child: HandwritingCanvas(),
               ),
             ),
             
@@ -112,32 +61,6 @@ class HomeScreen extends StatelessWidget {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActionButton({
-    required String label,
-    required Color backgroundColor,
-    required VoidCallback onPressed,
-  }) {
-    return ElevatedButton(
-      onPressed: onPressed,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: backgroundColor,
-        foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(30),
-        ),
-        elevation: 2,
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w500,
         ),
       ),
     );
