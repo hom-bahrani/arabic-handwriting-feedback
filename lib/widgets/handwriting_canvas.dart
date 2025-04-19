@@ -61,15 +61,12 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
     final double centerY = (context.size?.height ?? 400) / 2;
     final Offset center = Offset(centerX, centerY);
     
-    // Apply inverse transformations to get the correct position
-    double dx = (position.dx - center.dx) / _scale + center.dx - _offset.dx;
-    final double dy = (position.dy - center.dy) / _scale + center.dy - _offset.dy;
+    // Simplified position adjustment for more predictable drawing
+    double dx = position.dx;
+    double dy = position.dy;
     
-    // If in RTL mode, mirror the x-coordinate
-    if (_isRightToLeft) {
-      final double canvasWidth = context.size?.width ?? 300;
-      dx = canvasWidth - dx;
-    }
+    // If in RTL mode, we don't need to mirror the coordinates for drawing
+    // This allows natural drawing while still displaying RTL content
     
     return Offset(dx, dy);
   }
@@ -104,17 +101,16 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
                       // Start a new stroke
                       _isDrawing = true;
                       setState(() {
-                        // Apply inverse scale to make strokes appear correctly
-                        final Offset adjustedPosition = _getAdjustedPosition(details.localPosition);
-                        _currentStroke = [adjustedPosition];
+                        // Just use the raw position directly
+                        _currentStroke = [details.localPosition];
                       });
                     },
                     onPanUpdate: (details) {
                       // Add point to current stroke
                       if (_isDrawing) {
                         setState(() {
-                          final Offset adjustedPosition = _getAdjustedPosition(details.localPosition);
-                          _currentStroke.add(adjustedPosition);
+                          // Just use the raw position directly
+                          _currentStroke.add(details.localPosition);
                         });
                       }
                     },
@@ -428,19 +424,10 @@ class _DrawingPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Save the canvas state
-    canvas.save();
-    
-    // Apply transformations - scale from center and apply offset
-    final Offset center = Offset(size.width / 2, size.height / 2);
-    canvas.translate(center.dx, center.dy);
-    canvas.scale(scale);
-    canvas.translate(-center.dx + offset.dx, -center.dy + offset.dy);
-
-    // Much thinner stroke width better suited for Arabic script
+    // Create a pen suitable for handwriting
     final paint = Paint()
       ..color = Colors.black
-      ..strokeWidth = 0.8 / scale // Reduced from 1.8 to make it thinner
+      ..strokeWidth = 3.0 // Balanced width for visibility but not too thick
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
 
@@ -470,15 +457,13 @@ class _DrawingPainter extends CustomPainter {
       canvas.drawPath(path, paint);
     } else if (currentStroke.length == 1) {
       // Draw a dot if it's just a tap
-      canvas.drawCircle(currentStroke[0], 0.8 / scale, paint);
+      canvas.drawCircle(currentStroke[0], 1.5, paint);
     }
-    
-    // Restore the canvas state
-    canvas.restore();
   }
 
   @override
   bool shouldRepaint(covariant _DrawingPainter oldDelegate) {
-    return true;
+    return oldDelegate.strokes != strokes || 
+           oldDelegate.currentStroke != currentStroke;
   }
 }
