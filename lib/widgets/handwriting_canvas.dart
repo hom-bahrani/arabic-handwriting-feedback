@@ -57,14 +57,19 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
   
   // Method to get adjusted position based on scale and offset
   Offset _getAdjustedPosition(Offset position) {
-    final Offset center = Offset(
-      context.size?.width ?? 300 / 2, 
-      context.size?.height ?? 400 / 2
-    );
+    final double centerX = (context.size?.width ?? 300) / 2;
+    final double centerY = (context.size?.height ?? 400) / 2;
+    final Offset center = Offset(centerX, centerY);
     
     // Apply inverse transformations to get the correct position
-    final dx = (position.dx - center.dx) / _scale + center.dx - _offset.dx;
-    final dy = (position.dy - center.dy) / _scale + center.dy - _offset.dy;
+    double dx = (position.dx - center.dx) / _scale + center.dx - _offset.dx;
+    final double dy = (position.dy - center.dy) / _scale + center.dy - _offset.dy;
+    
+    // If in RTL mode, mirror the x-coordinate
+    if (_isRightToLeft) {
+      final double canvasWidth = context.size?.width ?? 300;
+      dx = canvasWidth - dx;
+    }
     
     return Offset(dx, dy);
   }
@@ -391,6 +396,13 @@ class _GuidelinesPainter extends CustomPainter {
       canvas.drawLine(
         Offset(size.width - 40, 0),
         Offset(size.width - 40, size.height),
+        verticalPaint..color = const Color(0xFF5F67EA).withOpacity(0.15),
+      );
+    } else {
+      // Draw a vertical guide on the left for LTR
+      canvas.drawLine(
+        Offset(40, 0),
+        Offset(40, size.height),
         verticalPaint,
       );
     }
@@ -425,10 +437,10 @@ class _DrawingPainter extends CustomPainter {
     canvas.scale(scale);
     canvas.translate(-center.dx + offset.dx, -center.dy + offset.dy);
 
-    // Thinner stroke width better suited for Arabic script
+    // Much thinner stroke width better suited for Arabic script
     final paint = Paint()
       ..color = Colors.black
-      ..strokeWidth = 1.8 / scale // Adjust stroke width based on scale
+      ..strokeWidth = 0.8 / scale // Reduced from 1.8 to make it thinner
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
 
@@ -458,7 +470,7 @@ class _DrawingPainter extends CustomPainter {
       canvas.drawPath(path, paint);
     } else if (currentStroke.length == 1) {
       // Draw a dot if it's just a tap
-      canvas.drawCircle(currentStroke[0], 1.5 / scale, paint);
+      canvas.drawCircle(currentStroke[0], 0.8 / scale, paint);
     }
     
     // Restore the canvas state
