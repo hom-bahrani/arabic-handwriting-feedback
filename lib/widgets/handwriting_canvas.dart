@@ -16,8 +16,11 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
   List<Offset> _currentStroke = [];
   
   // Transform variables for zoom and pan
-  double _scale = 1.0;
+  double _scale = 0.8; // Default smaller scale for more detailed writing
   Offset _offset = Offset.zero;
+  
+  // Direction flag (true for RTL, which is appropriate for Arabic)
+  bool _isRightToLeft = true;
   
   // Controller to detect when to reset
   bool _isDrawing = false;
@@ -44,6 +47,28 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
     });
   }
   
+  // Method to reset the canvas settings
+  void _resetCanvas() {
+    setState(() {
+      _scale = 0.8; // Better default for Arabic writing
+      _offset = Offset.zero;
+    });
+  }
+  
+  // Method to get adjusted position based on scale and offset
+  Offset _getAdjustedPosition(Offset position) {
+    final Offset center = Offset(
+      context.size?.width ?? 300 / 2, 
+      context.size?.height ?? 400 / 2
+    );
+    
+    // Apply inverse transformations to get the correct position
+    final dx = (position.dx - center.dx) / _scale + center.dx - _offset.dx;
+    final dy = (position.dy - center.dy) / _scale + center.dy - _offset.dy;
+    
+    return Offset(dx, dy);
+  }
+  
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -63,7 +88,7 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
                   Container(
                     color: Colors.white,
                     child: CustomPaint(
-                      painter: _GuidelinesPainter(),
+                      painter: _GuidelinesPainter(isRightToLeft: _isRightToLeft),
                       child: Container(),
                     ),
                   ),
@@ -74,14 +99,17 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
                       // Start a new stroke
                       _isDrawing = true;
                       setState(() {
-                        _currentStroke = [details.localPosition];
+                        // Apply inverse scale to make strokes appear correctly
+                        final Offset adjustedPosition = _getAdjustedPosition(details.localPosition);
+                        _currentStroke = [adjustedPosition];
                       });
                     },
                     onPanUpdate: (details) {
                       // Add point to current stroke
                       if (_isDrawing) {
                         setState(() {
-                          _currentStroke.add(details.localPosition);
+                          final Offset adjustedPosition = _getAdjustedPosition(details.localPosition);
+                          _currentStroke.add(adjustedPosition);
                         });
                       }
                     },
@@ -99,6 +127,8 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
                       painter: _DrawingPainter(
                         strokes: _strokes,
                         currentStroke: _currentStroke,
+                        scale: _scale,
+                        offset: _offset,
                       ),
                       child: Container(
                         color: Colors.transparent,
@@ -224,32 +254,40 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
                   Positioned(
                     top: 12,
                     right: 12,
-                    child: Row(
+                    child: Column(
                       children: [
-                        _buildControlButton(
-                          icon: Icons.remove,
-                          onPressed: () {
-                            setState(() {
-                              _scale = (_scale - 0.1).clamp(0.5, 2.0);
-                            });
-                          },
+                        Row(
+                          children: [
+                            _buildControlButton(
+                              icon: Icons.remove,
+                              onPressed: () {
+                                setState(() {
+                                  _scale = (_scale - 0.1).clamp(0.5, 2.0);
+                                });
+                              },
+                            ),
+                            const SizedBox(width: 8),
+                            _buildControlButton(
+                              icon: Icons.refresh,
+                              onPressed: _resetCanvas,
+                            ),
+                            const SizedBox(width: 8),
+                            _buildControlButton(
+                              icon: Icons.add,
+                              onPressed: () {
+                                setState(() {
+                                  _scale = (_scale + 0.1).clamp(0.5, 2.0);
+                                });
+                              },
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(height: 8),
                         _buildControlButton(
-                          icon: Icons.refresh,
+                          icon: _isRightToLeft ? Icons.format_textdirection_r_to_l : Icons.format_textdirection_l_to_r,
                           onPressed: () {
                             setState(() {
-                              _scale = 1.0;
-                              _offset = Offset.zero;
-                            });
-                          },
-                        ),
-                        const SizedBox(width: 8),
-                        _buildControlButton(
-                          icon: Icons.add,
-                          onPressed: () {
-                            setState(() {
-                              _scale = (_scale + 0.1).clamp(0.5, 2.0);
+                              _isRightToLeft = !_isRightToLeft;
                             });
                           },
                         ),
@@ -324,10 +362,18 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
 
 // Painter for the horizontal guidelines
 class _GuidelinesPainter extends CustomPainter {
+  final bool isRightToLeft;
+  
+  _GuidelinesPainter({this.isRightToLeft = true});
+  
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
+    final horizontalPaint = Paint()
       ..color = const Color(0xFF5F67EA).withOpacity(0.1)
+      ..strokeWidth = 1;
+      
+    final verticalPaint = Paint()
+      ..color = const Color(0xFF5F67EA).withOpacity(0.07)
       ..strokeWidth = 1;
     
     // Draw horizontal lines at regular intervals
@@ -336,7 +382,16 @@ class _GuidelinesPainter extends CustomPainter {
       canvas.drawLine(
         Offset(0, y),
         Offset(size.width, y),
-        paint,
+        horizontalPaint,
+      );
+    }
+    
+    // Draw a light vertical guide on the right side for RTL writing
+    if (isRightToLeft) {
+      canvas.drawLine(
+        Offset(size.width - 40, 0),
+        Offset(size.width - 40, size.height),
+        verticalPaint,
       );
     }
   }
@@ -349,17 +404,31 @@ class _GuidelinesPainter extends CustomPainter {
 class _DrawingPainter extends CustomPainter {
   final List<List<Offset>> strokes;
   final List<Offset> currentStroke;
+  final double scale;
+  final Offset offset;
 
   _DrawingPainter({
     required this.strokes,
     required this.currentStroke,
+    this.scale = 1.0,
+    this.offset = Offset.zero,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
+    // Save the canvas state
+    canvas.save();
+    
+    // Apply transformations - scale from center and apply offset
+    final Offset center = Offset(size.width / 2, size.height / 2);
+    canvas.translate(center.dx, center.dy);
+    canvas.scale(scale);
+    canvas.translate(-center.dx + offset.dx, -center.dy + offset.dy);
+
+    // Thinner stroke width better suited for Arabic script
     final paint = Paint()
       ..color = Colors.black
-      ..strokeWidth = 2.5
+      ..strokeWidth = 1.8 / scale // Adjust stroke width based on scale
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
 
@@ -389,8 +458,11 @@ class _DrawingPainter extends CustomPainter {
       canvas.drawPath(path, paint);
     } else if (currentStroke.length == 1) {
       // Draw a dot if it's just a tap
-      canvas.drawCircle(currentStroke[0], 2, paint);
+      canvas.drawCircle(currentStroke[0], 1.5 / scale, paint);
     }
+    
+    // Restore the canvas state
+    canvas.restore();
   }
 
   @override
