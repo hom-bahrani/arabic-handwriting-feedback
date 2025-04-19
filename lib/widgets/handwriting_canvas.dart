@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:ui' show PointMode;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../providers/handwriting_provider.dart';
@@ -11,19 +12,8 @@ class HandwritingCanvas extends StatefulWidget {
 }
 
 class _HandwritingCanvasState extends State<HandwritingCanvas> {
-  // Points and strokes for drawing
-  final List<List<Offset>> _strokes = [];
-  List<Offset> _currentStroke = [];
-  
-  // Transform variables for zoom and pan
-  double _scale = 0.8; // Default smaller scale for more detailed writing
-  Offset _offset = Offset.zero;
-  
-  // Direction flag (true for RTL, which is appropriate for Arabic)
-  bool _isRightToLeft = true;
-  
-  // Controller to detect when to reset
-  bool _isDrawing = false;
+  // Simple list of points for drawing
+  final List<DrawingPoint?> points = [];
   
   @override
   void initState() {
@@ -39,38 +29,12 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
     });
   }
   
-  // Method to clear all strokes
   void clearCanvas() {
     setState(() {
-      _strokes.clear();
-      _currentStroke = [];
+      points.clear();
     });
   }
-  
-  // Method to reset the canvas settings
-  void _resetCanvas() {
-    setState(() {
-      _scale = 0.8; // Better default for Arabic writing
-      _offset = Offset.zero;
-    });
-  }
-  
-  // Method to get adjusted position based on scale and offset
-  Offset _getAdjustedPosition(Offset position) {
-    final double centerX = (context.size?.width ?? 300) / 2;
-    final double centerY = (context.size?.height ?? 400) / 2;
-    final Offset center = Offset(centerX, centerY);
-    
-    // Simplified position adjustment for more predictable drawing
-    double dx = position.dx;
-    double dy = position.dy;
-    
-    // If in RTL mode, we don't need to mirror the coordinates for drawing
-    // This allows natural drawing while still displaying RTL content
-    
-    return Offset(dx, dy);
-  }
-  
+
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -82,65 +46,37 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
         borderRadius: BorderRadius.circular(16),
         child: Column(
           children: [
-            // Canvas with zoom controls and guidelines
+            // Drawing area
             Expanded(
               child: Stack(
                 children: [
-                  // Background with guide lines
+                  // Paper-like background with subtle grid
                   Container(
                     color: Colors.white,
                     child: CustomPaint(
-                      painter: _GuidelinesPainter(isRightToLeft: _isRightToLeft),
-                      child: Container(),
+                      painter: GridPainter(),
+                      size: Size.infinite,
                     ),
                   ),
                   
-                  // Drawing layer with gestures
-                  GestureDetector(
-                    onPanStart: (details) {
-                      // Start a new stroke
-                      _isDrawing = true;
-                      setState(() {
-                        // Just use the raw position directly
-                        _currentStroke = [details.localPosition];
-                      });
-                    },
-                    onPanUpdate: (details) {
-                      // Add point to current stroke
-                      if (_isDrawing) {
+                  // Drawing layer - Using RepaintBoundary for performance
+                  RepaintBoundary(
+                    child: DrawingArea(
+                      points: points,
+                      onPointsUpdate: (updatedPoints) {
+                        // This ensures we update state properly
                         setState(() {
-                          // Just use the raw position directly
-                          _currentStroke.add(details.localPosition);
+                          points.clear();
+                          points.addAll(updatedPoints);
                         });
-                      }
-                    },
-                    onPanEnd: (details) {
-                      // End the stroke
-                      _isDrawing = false;
-                      if (_currentStroke.isNotEmpty) {
-                        setState(() {
-                          _strokes.add(List.from(_currentStroke));
-                          _currentStroke = [];
-                        });
-                      }
-                    },
-                    child: CustomPaint(
-                      painter: _DrawingPainter(
-                        strokes: _strokes,
-                        currentStroke: _currentStroke,
-                        scale: _scale,
-                        offset: _offset,
-                      ),
-                      child: Container(
-                        color: Colors.transparent,
-                      ),
+                      },
                     ),
                   ),
                   
                   // Placeholder text or feedback display
                   Consumer<HandwritingProvider>(
                     builder: (context, provider, child) {
-                      if (_strokes.isEmpty && provider.state == ProcessingState.idle) {
+                      if (points.isEmpty && provider.state == ProcessingState.idle) {
                         return Center(
                           child: Text(
                             'مرحبا بالعالم',
@@ -250,51 +186,6 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
                       return Container(); // Return empty container if drawing
                     },
                   ),
-                  
-                  // Zoom control buttons
-                  Positioned(
-                    top: 12,
-                    right: 12,
-                    child: Column(
-                      children: [
-                        Row(
-                          children: [
-                            _buildControlButton(
-                              icon: Icons.remove,
-                              onPressed: () {
-                                setState(() {
-                                  _scale = (_scale - 0.1).clamp(0.5, 2.0);
-                                });
-                              },
-                            ),
-                            const SizedBox(width: 8),
-                            _buildControlButton(
-                              icon: Icons.refresh,
-                              onPressed: _resetCanvas,
-                            ),
-                            const SizedBox(width: 8),
-                            _buildControlButton(
-                              icon: Icons.add,
-                              onPressed: () {
-                                setState(() {
-                                  _scale = (_scale + 0.1).clamp(0.5, 2.0);
-                                });
-                              },
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        _buildControlButton(
-                          icon: _isRightToLeft ? Icons.format_textdirection_r_to_l : Icons.format_textdirection_l_to_r,
-                          onPressed: () {
-                            setState(() {
-                              _isRightToLeft = !_isRightToLeft;
-                            });
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -329,141 +220,153 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
       ),
     );
   }
-  
-  Widget _buildControlButton({
-    required IconData icon,
-    required VoidCallback onPressed,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        shape: BoxShape.circle,
-        border: Border.all(color: const Color(0xFFE0E7FF)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 2,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
-      child: IconButton(
-        icon: Icon(icon, color: const Color(0xFF4F46E5)),
-        onPressed: onPressed,
-        iconSize: 20,
-        padding: const EdgeInsets.all(4),
-        constraints: const BoxConstraints(
-          minWidth: 32,
-          minHeight: 32,
-        ),
+}
+
+// Separate widget for drawing area to better handle state changes
+class DrawingArea extends StatefulWidget {
+  final List<DrawingPoint?> points;
+  final Function(List<DrawingPoint?>) onPointsUpdate;
+
+  const DrawingArea({
+    super.key,
+    required this.points,
+    required this.onPointsUpdate,
+  });
+
+  @override
+  State<DrawingArea> createState() => _DrawingAreaState();
+}
+
+class _DrawingAreaState extends State<DrawingArea> {
+  // Local copy of points for immediate drawing response
+  late List<DrawingPoint?> _localPoints;
+
+  @override
+  void initState() {
+    super.initState();
+    _localPoints = List.from(widget.points);
+  }
+
+  @override
+  void didUpdateWidget(DrawingArea oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.points != oldWidget.points) {
+      _localPoints = List.from(widget.points);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onPanStart: (details) {
+        // Create a new point and update immediately
+        final newPoint = DrawingPoint(
+          details.localPosition,
+          Paint()
+            ..color = Colors.black
+            ..isAntiAlias = true
+            ..strokeWidth = 1.0 
+            ..strokeCap = StrokeCap.round,
+        );
+        
+        setState(() {
+          _localPoints.add(newPoint);
+        });
+        
+        // Notify parent
+        widget.onPointsUpdate(_localPoints);
+      },
+      onPanUpdate: (details) {
+        // Add new point and update immediately
+        final newPoint = DrawingPoint(
+          details.localPosition,
+          Paint()
+            ..color = Colors.black
+            ..isAntiAlias = true
+            ..strokeWidth = 1.0
+            ..strokeCap = StrokeCap.round,
+        );
+        
+        setState(() {
+          _localPoints.add(newPoint);
+        });
+        
+        // Notify parent
+        widget.onPointsUpdate(_localPoints);
+      },
+      onPanEnd: (details) {
+        // Add null to mark end of stroke
+        setState(() {
+          _localPoints.add(null);
+        });
+        
+        // Notify parent
+        widget.onPointsUpdate(_localPoints);
+      },
+      child: CustomPaint(
+        painter: DrawingPainter(points: _localPoints),
+        size: Size.infinite,
       ),
     );
   }
 }
 
-// Painter for the horizontal guidelines
-class _GuidelinesPainter extends CustomPainter {
-  final bool isRightToLeft;
+// Simple class to represent a drawing point with its style
+class DrawingPoint {
+  final Offset offset;
+  final Paint paint;
   
-  _GuidelinesPainter({this.isRightToLeft = true});
-  
-  @override
-  void paint(Canvas canvas, Size size) {
-    final horizontalPaint = Paint()
-      ..color = const Color(0xFF5F67EA).withOpacity(0.1)
-      ..strokeWidth = 1;
-      
-    final verticalPaint = Paint()
-      ..color = const Color(0xFF5F67EA).withOpacity(0.07)
-      ..strokeWidth = 1;
-    
-    // Draw horizontal lines at regular intervals
-    const lineSpacing = 40.0;
-    for (double y = lineSpacing; y < size.height; y += lineSpacing) {
-      canvas.drawLine(
-        Offset(0, y),
-        Offset(size.width, y),
-        horizontalPaint,
-      );
-    }
-    
-    // Draw a light vertical guide on the right side for RTL writing
-    if (isRightToLeft) {
-      canvas.drawLine(
-        Offset(size.width - 40, 0),
-        Offset(size.width - 40, size.height),
-        verticalPaint..color = const Color(0xFF5F67EA).withOpacity(0.15),
-      );
-    } else {
-      // Draw a vertical guide on the left for LTR
-      canvas.drawLine(
-        Offset(40, 0),
-        Offset(40, size.height),
-        verticalPaint,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  DrawingPoint(this.offset, this.paint);
 }
 
-// Painter for drawing the actual strokes
-class _DrawingPainter extends CustomPainter {
-  final List<List<Offset>> strokes;
-  final List<Offset> currentStroke;
-  final double scale;
-  final Offset offset;
-
-  _DrawingPainter({
-    required this.strokes,
-    required this.currentStroke,
-    this.scale = 1.0,
-    this.offset = Offset.zero,
-  });
-
+// Painter for drawing lines
+class DrawingPainter extends CustomPainter {
+  final List<DrawingPoint?> points;
+  
+  DrawingPainter({required this.points});
+  
   @override
   void paint(Canvas canvas, Size size) {
-    // Create a pen suitable for handwriting
-    final paint = Paint()
-      ..color = Colors.black
-      ..strokeWidth = 3.0 // Balanced width for visibility but not too thick
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-
-    // Draw completed strokes
-    for (final stroke in strokes) {
-      if (stroke.length < 2) continue;
-      
-      final path = Path();
-      path.moveTo(stroke[0].dx, stroke[0].dy);
-      
-      for (int i = 1; i < stroke.length; i++) {
-        path.lineTo(stroke[i].dx, stroke[i].dy);
+    for (int i = 0; i < points.length - 1; i++) {
+      if (points[i] != null && points[i + 1] != null) {
+        // Draw line between points
+        canvas.drawLine(
+          points[i]!.offset,
+          points[i + 1]!.offset,
+          points[i]!.paint,
+        );
+      } else if (points[i] != null && (i == points.length - 1 || points[i + 1] == null)) {
+        // Draw a single point if it's at the end of a stroke
+        canvas.drawCircle(points[i]!.offset, 0.5, points[i]!.paint);
       }
-      
-      canvas.drawPath(path, paint);
+    }
+  }
+  
+  @override
+  bool shouldRepaint(covariant DrawingPainter oldDelegate) {
+    return oldDelegate.points != points;
+  }
+}
+
+// Simple grid painter for paper-like background
+class GridPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.grey.withOpacity(0.05)
+      ..strokeWidth = 0.5;
+    
+    // Draw horizontal lines
+    for (double i = 0; i < size.height; i += 20) {
+      canvas.drawLine(Offset(0, i), Offset(size.width, i), paint);
     }
     
-    // Draw current (in-progress) stroke
-    if (currentStroke.length >= 2) {
-      final path = Path();
-      path.moveTo(currentStroke[0].dx, currentStroke[0].dy);
-      
-      for (int i = 1; i < currentStroke.length; i++) {
-        path.lineTo(currentStroke[i].dx, currentStroke[i].dy);
-      }
-      
-      canvas.drawPath(path, paint);
-    } else if (currentStroke.length == 1) {
-      // Draw a dot if it's just a tap
-      canvas.drawCircle(currentStroke[0], 1.5, paint);
+    // Draw vertical lines
+    for (double i = 0; i < size.width; i += 20) {
+      canvas.drawLine(Offset(i, 0), Offset(i, size.height), paint);
     }
   }
-
+  
   @override
-  bool shouldRepaint(covariant _DrawingPainter oldDelegate) {
-    return oldDelegate.strokes != strokes || 
-           oldDelegate.currentStroke != currentStroke;
-  }
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
